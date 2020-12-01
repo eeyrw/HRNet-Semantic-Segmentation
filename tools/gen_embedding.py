@@ -176,7 +176,7 @@ def main():
 
         with torch.no_grad():
             segOutput = model(imgs)[1]
-            sppOut = spp(segOutput)
+            sppOut = spp(torch.sigmoid(segOutput))
 
         # imageBgrCV = cv2.cvtColor(np.asarray(resizeImage), cv2.COLOR_RGB2BGR)
         # imageBgrCV = np.zeros((512,1024,3),dtype=np.uint8)
