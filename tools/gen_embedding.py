@@ -30,6 +30,23 @@ from datasetUtils import get_partial_dataset, split_dataset
 input_mean = [0.485, 0.456, 0.406]
 input_std = [0.229, 0.224, 0.225]
 
+def resizeAndCropToTargetSize(img, width, height):
+    rawW, rawH = img.size
+    rawAspectRatio = rawW/rawH
+    wantedAspectRatio = width/height
+    if rawAspectRatio > wantedAspectRatio:
+        scaleFactor = height/rawH
+        widthBeforeCrop = int(rawW*scaleFactor)
+        return img.resize((widthBeforeCrop, height), Image.BILINEAR). \
+            crop(((widthBeforeCrop-width)//2, 0,
+                  (widthBeforeCrop-width)//2+width, height))
+    else:
+        scaleFactor = width/rawW
+        heightBeforeCrop = int(rawH*scaleFactor)
+        return img.resize((width, heightBeforeCrop), Image.BILINEAR). \
+            crop((0, (heightBeforeCrop-height)//2, width,
+                  (heightBeforeCrop-height)//2+height))
+
 def getTusimpleLoader():
     target_transform = transforms.Compose([
         mytransforms.Scale((512, 1024)),
@@ -56,7 +73,7 @@ def getTusimpleLoader():
 
     sampler = torch.utils.data.SequentialSampler(train_dataset)
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=1, sampler=sampler, num_workers=4)
+        train_dataset, batch_size=8, sampler=sampler, num_workers=4)
 
     return train_loader
 
@@ -71,7 +88,8 @@ def getCulaneLoader():
         mytransforms.MaskToTensor(),
     ])
     img_transform = transforms.Compose([
-        transforms.CenterCrop((512, 1024)),
+        # transforms.CenterCrop((512, 1024)),
+        transforms.Lambda(lambda x:resizeAndCropToTargetSize(x,1024,512)),
         transforms.ToTensor(),
         transforms.Normalize(input_mean, input_std),
     ])
@@ -91,22 +109,7 @@ def getCulaneLoader():
 
     return train_loader    
 
-def resizeAndCropToTargetSize(img, width, height):
-    rawW, rawH = img.size
-    rawAspectRatio = rawW/rawH
-    wantedAspectRatio = width/height
-    if rawAspectRatio > wantedAspectRatio:
-        scaleFactor = height/rawH
-        widthBeforeCrop = int(rawW*scaleFactor)
-        return img.resize((widthBeforeCrop, height), Image.BILINEAR). \
-            crop(((widthBeforeCrop-width)//2, 0,
-                  (widthBeforeCrop-width)//2+width, height))
-    else:
-        scaleFactor = width/rawW
-        heightBeforeCrop = int(rawH*scaleFactor)
-        return img.resize((width, heightBeforeCrop), Image.BILINEAR). \
-            crop((0, (heightBeforeCrop-height)//2, width,
-                  (heightBeforeCrop-height)//2+height))
+
 
 def normalizeImage(imageTensor):
     maxVal = torch.max(imageTensor)
@@ -169,41 +172,45 @@ def main():
     cudnn.benchmark = True
     cudnn.fastest = True
 
+    showCvUi =False
+
     spp = models.spp.SPPLayer(4,pool_type='avg_pool')
-    train_loader = getCulaneLoader()
-    for imageFile in tqdm(train_loader):
-        imgs = imageFile[0].cuda()
+    train_loader = getTusimpleLoader()
+    for imgs,_,fileNames in tqdm(train_loader):
+        imgs = imgs.cuda()
 
         with torch.no_grad():
             segOutput = model(imgs)[1]
             sppOut = spp(torch.sigmoid(segOutput))
 
-        # imageBgrCV = cv2.cvtColor(np.asarray(resizeImage), cv2.COLOR_RGB2BGR)
-        # imageBgrCV = np.zeros((512,1024,3),dtype=np.uint8)
-        imageBgrCV = tensorToCvBgr(imgs[0])
-        segOutput = segOutput[0]
-        # segOutput: [class,h,w]
-        # t = torch.sigmoid(segOutput)
-        t = torch.argmax(segOutput, dim=0)
-        segOutput = t.byte().cpu().numpy()
-        # segOutput: [1,1,h,w]
+        if showCvUi:
+            # imageBgrCV = cv2.cvtColor(np.asarray(resizeImage), cv2.COLOR_RGB2BGR)
+            # imageBgrCV = np.zeros((512,1024,3),dtype=np.uint8)
+            imageBgrCV = tensorToCvBgr(imgs[0])
+            segOutput = segOutput[0]
+            # segOutput: [class,h,w]
+            # t = torch.sigmoid(segOutput)
+            t = torch.argmax(segOutput, dim=0)
+            segOutput = t.byte().cpu().numpy()
+            # segOutput: [1,1,h,w]
 
-        # colorMapMat = np.array([lb.color for lb in labels],dtype=np.uint8)[...,::-1] # RGB to BGR
-        segImage = Cityscapes.decode_target(
-            segOutput).astype(np.uint8)[..., ::-1]
-        segImage = cv2.resize(segImage, (1024, 512),
-                              interpolation=cv2.INTER_NEAREST)
-        # segImage = colorMapMat[segOutput]
-        imageBgrCV = cv2.addWeighted(imageBgrCV, 0.5, segImage, 0.5, 0)
-        # imageBgrCV = segImage
-        # imageBgrCV = cv2.resize(imageBgrCV,(3384//4,2710//4))
+            # colorMapMat = np.array([lb.color for lb in labels],dtype=np.uint8)[...,::-1] # RGB to BGR
+            segImage = Cityscapes.decode_target(
+                segOutput).astype(np.uint8)[..., ::-1]
+            segImage = cv2.resize(segImage, (1024, 512),
+                                interpolation=cv2.INTER_NEAREST)
+            # segImage = colorMapMat[segOutput]
+            imageBgrCV = cv2.addWeighted(imageBgrCV, 0.5, segImage, 0.5, 0)
+            # imageBgrCV = segImage
+            # imageBgrCV = cv2.resize(imageBgrCV,(3384//4,2710//4))
 
-        cv2.imshow('L', imageBgrCV)
-        # The following frees up resources and closes all windows
-        k = cv2.waitKey(1) & 0xff
-        if k == 27:
-            break
-    cv2.destroyWindow('L')
+            cv2.imshow('L', imageBgrCV)
+            # The following frees up resources and closes all windows
+            k = cv2.waitKey(1) & 0xff
+            if k == 27:
+                break
+    if showCvUi:
+        cv2.destroyWindow('L')
     return
 
 
