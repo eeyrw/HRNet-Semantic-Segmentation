@@ -169,13 +169,14 @@ def main():
     cudnn.benchmark = True
     cudnn.fastest = True
 
-
+    spp = models.spp.SPPLayer(4,pool_type='avg_pool')
     train_loader = getCulaneLoader()
     for imageFile in tqdm(train_loader):
         imgs = imageFile[0].cuda()
 
         with torch.no_grad():
             segOutput = model(imgs)[1]
+            sppOut = spp(segOutput)
 
         # imageBgrCV = cv2.cvtColor(np.asarray(resizeImage), cv2.COLOR_RGB2BGR)
         # imageBgrCV = np.zeros((512,1024,3),dtype=np.uint8)
