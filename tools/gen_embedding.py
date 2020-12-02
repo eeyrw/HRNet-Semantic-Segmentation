@@ -173,7 +173,7 @@ def main():
     cudnn.fastest = True
 
     showCvUi =False
-
+    embeddingDict = {}
     spp = models.spp.SPPLayer(4,pool_type='avg_pool')
     train_loader = getTusimpleLoader()
     for imgs,_,fileNames in tqdm(train_loader):
@@ -182,6 +182,9 @@ def main():
         with torch.no_grad():
             segOutput = model(imgs)[1]
             sppOut = spp(torch.sigmoid(segOutput))
+
+        for embedding, fileName in zip(sppOut,fileNames):
+            embeddingDict[fileName] = embedding.cpu().numpy()
 
         if showCvUi:
             # imageBgrCV = cv2.cvtColor(np.asarray(resizeImage), cv2.COLOR_RGB2BGR)
@@ -211,6 +214,9 @@ def main():
                 break
     if showCvUi:
         cv2.destroyWindow('L')
+
+    with open('DatasetEmbedding.pkl', 'wb') as f:
+        pickle.dump(embeddingDict, f)   
     return
 
 
