@@ -26,6 +26,7 @@ import mytransforms as mytransforms
 from constant import tusimple_row_anchor, culane_row_anchor
 from dataset import LaneClsDataset, LaneTestDataset, LaneGenPseudoDataset
 from datasetUtils import get_partial_dataset, split_dataset
+import pickle
 
 input_mean = [0.485, 0.456, 0.406]
 input_std = [0.229, 0.224, 0.225]
@@ -71,7 +72,7 @@ def getTusimpleLoader():
                                    row_anchor=tusimple_row_anchor,
                                    segment_transform=segment_transform, use_aux=False, num_lanes=4, load_name=True)
 
-    sampler = torch.utils.data.SequentialSampler(train_dataset)
+    sampler = torch.utils.data.RandomSampler(train_dataset,replacement=True,num_samples=1000)
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=8, sampler=sampler, num_workers=4)
 
@@ -88,22 +89,22 @@ def getCulaneLoader():
         mytransforms.MaskToTensor(),
     ])
     img_transform = transforms.Compose([
-        # transforms.CenterCrop((512, 1024)),
-        transforms.Lambda(lambda x:resizeAndCropToTargetSize(x,1024,512)),
+        transforms.CenterCrop((512, 1024)),
+        # transforms.Lambda(lambda x:resizeAndCropToTargetSize(x,1024,512)),
         transforms.ToTensor(),
         transforms.Normalize(input_mean, input_std),
     ])
 
-    train_dataset = LaneClsDataset('E:/CUlane',
+    train_dataset = LaneClsDataset('E:/CULane',
                                    os.path.join(
-                                       'E:/CUlane', 'list/train_gt.txt'),
+                                       'E:/CULane', 'list/train_gt.txt'),
                                    img_transform=img_transform, target_transform=target_transform,
                                    simu_transform=None,
                                    griding_num=200,
                                    row_anchor=culane_row_anchor,
                                    segment_transform=segment_transform, use_aux=False, num_lanes=4, load_name=True)
 
-    sampler = torch.utils.data.SequentialSampler(train_dataset)
+    sampler = torch.utils.data.RandomSampler(train_dataset,replacement=True,num_samples=1000)
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=8, sampler=sampler, num_workers=4)
 
@@ -175,13 +176,14 @@ def main():
     showCvUi =False
     embeddingDict = {}
     spp = models.spp.SPPLayer(4,pool_type='avg_pool')
-    train_loader = getTusimpleLoader()
+    train_loader = getCulaneLoader()
     for imgs,_,fileNames in tqdm(train_loader):
         imgs = imgs.cuda()
 
         with torch.no_grad():
             segOutput = model(imgs)[1]
-            sppOut = spp(torch.sigmoid(segOutput))
+            sppOut  = torch.argmax(segOutput, dim=0)#spp(torch.sigmoid(segOutput[1:15]))
+            sppOut = torch.flatten(sppOut, start_dim=1)
 
         for embedding, fileName in zip(sppOut,fileNames):
             embeddingDict[fileName] = embedding.cpu().numpy()
